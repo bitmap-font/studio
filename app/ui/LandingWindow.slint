@@ -1,0 +1,58 @@
+import { ListView, Button } from "std-widgets.slint";
+import "../assets/fonts/pretendard/variable/PretendardVariable.ttf";
+// import "../assets/fonts/pretendard/Pretendard-Thin.otf";
+// import "../assets/fonts/pretendard/Pretendard-Light.otf";
+// import "../assets/fonts/pretendard/Pretendard-ExtraLight.otf";
+// import "../assets/fonts/pretendard/Pretendard-Regular.otf";
+// import "../assets/fonts/pretendard/Pretendard-Medium.otf";
+// import "../assets/fonts/pretendard/Pretendard-SemiBold.otf";
+// import "../assets/fonts/pretendard/Pretendard-Bold.otf";
+
+export component LandingWindow inherits Window {
+    default-font-family: "Pretendard Variable";
+    HorizontalLayout {
+        padding: 16px;
+
+        VerticalLayout {
+            Text {
+                text: "@bitmap-font/";
+
+                vertical-stretch: 0;
+
+                font-size: 24px;
+            }
+
+            Text {
+                text: "STUDIO";
+
+                vertical-stretch: 0;
+
+                font-weight: 900;
+                font-size: 16px;
+                letter-spacing: 4px;
+            }
+
+            Text {
+                text: "v0.0.1";
+
+                vertical-stretch: 0;
+            }
+
+            Rectangle { }
+
+            HorizontalLayout { }
+        }
+
+        VerticalLayout {
+            Text {
+                text: "Recent Projects";
+            }
+
+            ListView { }
+
+            Button {
+                text: "(+) New Project";
+            }
+        }
+    }
+}
