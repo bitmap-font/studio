@@ -1,15 +1,18 @@
 slint::include_modules!();
 
 fn main() -> Result<(), slint::PlatformError> {
-    let ui = LandingWindow::new()?;
+    let landing = LandingWindow::new()?;
+    landing.show()?;
 
-    // ui.on_request_increase_value({
-    //     let ui_handle = ui.as_weak();
-    //     move || {
-    //         let ui = ui_handle.unwrap();
-    //         ui.set_counter(ui.get_counter() + 1);
-    //     }
-    // });
+    landing.on_new_project({
+        let landing = landing.as_weak();
+        move || {
+            let wizard = WizardWindow::new().unwrap();
+            wizard.show().unwrap();
 
-    ui.run()
+            landing.upgrade().unwrap().hide().unwrap();
+        }
+    });
+
+    Ok(slint::run_event_loop()?)
 }

@@ -1,0 +1,36 @@
+import { ListView, Button } from "std-widgets.slint";
+import { Fonts } from "../common/fonts.slint";
+
+export component WizardWindow inherits Window {
+    default-font-family: Fonts.sans;
+    VerticalLayout {
+        padding: 16px;
+
+        Text {
+            vertical-stretch: 0;
+            text: "Project Wizard";
+
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        GridLayout {
+            vertical-stretch: 1;
+
+            Row {
+                Text {
+                    text: "Family Name";
+                }
+
+                Rectangle {
+                    background: white;
+                    TextInput {
+                        color: black;
+                    }
+                }
+            }
+
+            Row { }
+        }
+    }
+}

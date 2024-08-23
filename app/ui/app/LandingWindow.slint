@@ -1,14 +1,18 @@
 import { ListView, Button } from "std-widgets.slint";
-import "../assets/fonts/pretendard/static/Pretendard-Thin.otf";
-import "../assets/fonts/pretendard/static/Pretendard-Light.otf";
-import "../assets/fonts/pretendard/static/Pretendard-ExtraLight.otf";
-import "../assets/fonts/pretendard/static/Pretendard-Regular.otf";
-import "../assets/fonts/pretendard/static/Pretendard-Medium.otf";
-import "../assets/fonts/pretendard/static/Pretendard-SemiBold.otf";
-import "../assets/fonts/pretendard/static/Pretendard-Bold.otf";
+
+import { Fonts } from "../common/fonts.slint";
+
+export struct RecentProject {
+    path: string,
+    name: string,
+}
 
 export component LandingWindow inherits Window {
-    default-font-family: "Pretendard";
+    in property <[RecentProject]> recent-projects;
+
+    callback new-project();
+
+    default-font-family: Fonts.sans;
     HorizontalLayout {
         padding: 16px;
 
@@ -51,6 +55,10 @@ export component LandingWindow inherits Window {
 
             Button {
                 text: "(+) New Project";
+
+                clicked => {
+                    root.new-project();
+                }
             }
         }
     }
