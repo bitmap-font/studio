@@ -1,0 +1,11 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap.workspace = true
+lib.workspace = true
+snafu.workspace = true
+color-eyre.workspace = true
+eyre.workspace = true

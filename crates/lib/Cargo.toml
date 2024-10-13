@@ -1,0 +1,10 @@
+[package]
+name = "lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1.0.209"
+toml = "0.8.19"
+write-fonts = "0.29.0"
+snafu.workspace = true

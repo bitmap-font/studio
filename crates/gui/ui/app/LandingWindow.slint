@@ -17,22 +17,10 @@ export component LandingWindow inherits Window {
         padding: 16px;
 
         VerticalLayout {
-            Text {
-                text: "@bitmap-font/";
-
-                vertical-stretch: 0;
-
-                font-size: 24px;
-            }
-
-            Text {
-                text: "STUDIO";
-
-                vertical-stretch: 0;
-
-                font-weight: 900;
-                font-size: 16px;
-                letter-spacing: 4px;
+            Image {
+                source: @image-url("../../assets/images/logo/logo-light-theme.png");
+                width: 320px;
+                image-rendering: pixelated;
             }
 
             Text {
@@ -47,19 +35,21 @@ export component LandingWindow inherits Window {
         }
 
         VerticalLayout {
-            Text {
-                text: "Recent Projects";
+            HorizontalLayout {
+                Text {
+                    text: "Recent Projects";
+                }
+
+                Button {
+                    text: "(+) New Project";
+
+                    clicked => {
+                        root.new-project();
+                    }
+                }
             }
 
             ListView { }
-
-            Button {
-                text: "(+) New Project";
-
-                clicked => {
-                    root.new-project();
-                }
-            }
         }
     }
 }

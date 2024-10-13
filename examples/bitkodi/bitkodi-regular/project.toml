@@ -1,0 +1,10 @@
+[project]
+name = "Bitkodi Regular"
+weight = 400                             # Regular (Normal)
+width = { type = "duospaced", half = 4 }
+
+
+[blocks."Basic Latin"]
+size.default = { width = 4, height = 8 }
+guide.letter-spacing = { right = 1 }
+guide.line-spacing = { bottom = 1 }

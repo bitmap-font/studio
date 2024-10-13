@@ -1,3 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["app", "lib"]
+members = ["crates/gui", "crates/cli", "crates/yaff", "crates/lib"]
+
+[workspace.dependencies]
+# monorepo
+lib = { path = "./crates/lib" }
+
+# cli
+clap = { version = "4.5.20", features = ["derive"] }
+# error-handling
+snafu = "0.8.5"
+color-eyre = "0.6"
+eyre = "0.6"
