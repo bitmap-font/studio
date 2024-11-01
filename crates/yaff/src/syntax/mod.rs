@@ -4,4 +4,4 @@ mod fragments;
 mod glyph_definition;
 mod property;
 
-pub use document::parse_document;
+pub use document::{parse_document, YaffParseError};

@@ -1,9 +1,10 @@
 use std::str::FromStr;
 use winnow::{
     ascii::{digit1, hex_digit1, oct_digit1},
-    combinator::{alt, delimited, opt, preceded, repeat, separated, separated_foldl1, terminated},
+    combinator::{alt, cut_err, opt, preceded, repeat, separated, separated_foldl1, terminated},
+    error::{StrContext, StrContextValue},
     seq,
-    token::any,
+    token::{any, none_of},
     PResult, Parser,
 };
 
@@ -12,7 +13,7 @@ use crate::{
     GlyphValue,
 };
 
-use super::fragments::{parse_non_line_terminator, parse_whitespace};
+use super::fragments::parse_whitespace;
 
 pub fn parse_glyph_definition(input: &mut &str) -> PResult<GlyphDefinition> {
     seq!(GlyphDefinition {
@@ -25,11 +26,10 @@ pub fn parse_glyph_definition(input: &mut &str) -> PResult<GlyphDefinition> {
                     ':',
                     opt(parse_whitespace),
                     parse_line_terminator,
-                    opt(parse_whitespace),
                 )
             )
         ),
-        indent: parse_whitespace,
+        indent: cut_err(parse_whitespace),
         value: create_glyph_value_parser(&indent),
     })
     .parse_next(input)
@@ -48,8 +48,14 @@ fn parse_codepoint_label(input: &mut &str) -> PResult<GlyphLabel> {
     separated(
         1..,
         alt((
-            preceded(alt(("0x", "0X")), hex_digit1.try_map(u32::from_str)),
-            preceded(alt(("0o", "0O")), oct_digit1.try_map(u32::from_str)),
+            preceded(
+                alt(("0x", "0X")),
+                hex_digit1.try_map(|s| u32::from_str_radix(s, 16)),
+            ),
+            preceded(
+                alt(("0o", "0O")),
+                oct_digit1.try_map(|s| u32::from_str_radix(s, 8)),
+            ),
             digit1.try_map(u32::from_str),
         )),
         comma_separator,
@@ -62,10 +68,22 @@ fn parse_character_label(input: &mut &str) -> PResult<GlyphLabel> {
     separated_foldl1(
         alt((
             preceded(alt(("u+", "U+")), hex_digit1)
-                .try_map(u32::from_str)
+                .try_map(|s| u32::from_str_radix(s, 16))
                 .try_map(char::try_from)
                 .map(|c| vec![c]),
-            delimited('\'', repeat(0.., any), '\''),
+            preceded(
+                '\'',
+                repeat(
+                    1..,
+                    terminated(
+                        repeat(0.., none_of(('\n', '\r', '\'')))
+                            .map(|acc: Vec<_>| -> String { acc.into_iter().collect() })
+                            .context(StrContext::Label("test")),
+                        '\'',
+                    ),
+                )
+                .map(|acc: Vec<_>| acc.join("'").chars().collect()),
+            ),
         )),
         comma_separator,
         |mut v1, _, mut v2| {
@@ -83,7 +101,7 @@ fn parse_tag_label(input: &mut &str) -> PResult<GlyphLabel> {
         repeat(
             1..,
             terminated(
-                repeat(0.., parse_non_line_terminator)
+                repeat(0.., none_of(('\n', '\r', '\"')))
                     .map(|acc: Vec<_>| -> String { acc.into_iter().collect() }),
                 '"',
             ),
@@ -99,13 +117,13 @@ fn create_glyph_value_parser<'a>(
 ) -> impl Fn(&mut &str) -> PResult<Option<GlyphValue>> + 'a {
     move |input| {
         alt((
+            ('-', opt(parse_whitespace), parse_line_terminator).map(|_| None),
             separated(
                 1..,
                 parse_glyph_row,
                 (opt(parse_whitespace), parse_line_terminator, indent),
             )
             .try_map(|acc: Vec<_>| GlyphValue::new(acc).map(Some)),
-            ('-', opt(parse_whitespace), parse_line_terminator).map(|_| None),
         ))
         .parse_next(input)
     }

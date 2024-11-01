@@ -5,10 +5,13 @@ members = ["crates/gui", "crates/cli", "crates/yaff", "crates/lib"]
 [workspace.dependencies]
 # monorepo
 lib = { path = "./crates/lib" }
+yaff = { path = "./crates/yaff" }
 
-# cli
-clap = { version = "4.5.20", features = ["derive"] }
 # error-handling
 snafu = "0.8.5"
 color-eyre = "0.6"
 eyre = "0.6"
+
+# common libs
+clap = { version = "4.5.20", features = ["derive"] }
+jiff = "0.1"

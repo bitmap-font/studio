@@ -7,4 +7,7 @@ edition = "2021"
 serde = "1.0.209"
 toml = "0.8.19"
 write-fonts = "0.29.0"
+walkdir = "2.5.0"
 snafu.workspace = true
+yaff.workspace = true
+jiff.workspace = true

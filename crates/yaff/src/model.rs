@@ -1,44 +1,76 @@
+use core::fmt;
 use snafu::prelude::*;
-use std::num::TryFromIntError;
+use std::{collections::HashMap, fmt::Write, num::TryFromIntError};
 
 pub struct Document {
     elements: Vec<BlockElement>,
+    glyph_lut: HashMap<SemanticGlyphLabel, usize>,
 }
 
 impl Document {
     pub fn new(elements: Vec<BlockElement>) -> Document {
-        Document { elements }
+        let mut glyph_lut = HashMap::new();
+        for (idx, e) in elements.iter().enumerate() {
+            match e {
+                BlockElement::Comment(_) => {}
+                BlockElement::Whitespace(_) => {}
+                BlockElement::Property(_) => {}
+                BlockElement::GlyphDefinition(glyph) => {
+                    for label in glyph.labels.iter().flat_map(|label| label.to_semantic()) {
+                        glyph_lut.insert(label, idx);
+                    }
+                }
+            }
+        }
+        Document {
+            elements,
+            glyph_lut,
+        }
+    }
+
+    pub fn get_glyph(&self, label: &SemanticGlyphLabel) -> Option<&GlyphDefinition> {
+        let idx = self.glyph_lut.get(label)?;
+        match self.elements.get(*idx) {
+            Some(BlockElement::GlyphDefinition(def)) => Some(def),
+            _ => None,
+        }
+    }
+
+    pub fn list_glyph(&self) -> impl Iterator<Item = &GlyphDefinition> {
+        self.glyph_lut
+            .values()
+            .flat_map(|idx| match &self.elements.get(*idx) {
+                Some(BlockElement::GlyphDefinition(def)) => Some(def),
+                _ => None,
+            })
     }
 }
 
+#[derive(Debug)]
 pub enum BlockElement {
     Comment(Comment),
     Whitespace(String),
     Property(Property),
     GlyphDefinition(GlyphDefinition),
 }
+
+#[derive(Debug)]
 pub struct Comment(pub String);
 
+#[derive(Debug)]
 pub struct Property {
     pub key: String,
     pub value: String,
 }
 
+#[derive(Debug)]
 pub struct GlyphDefinition {
     pub labels: Vec<GlyphLabel>,
     pub indent: String,
     pub value: Option<GlyphValue>,
 }
 
-pub enum GlyphLabel {
-    CodepointSingle(u32),
-    CodepointSequence(Vec<u8>),
-    CharacterSingle(char),
-    CharacterSequence(Vec<char>),
-    Tag(String),
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum GlyphPaletteColor {
     Zero = 0x0,
     One = 0x1,
@@ -112,10 +144,11 @@ impl GlyphPaletteColor {
     }
 }
 
+#[derive(Debug)]
 pub struct GlyphValue {
     pub width: usize,
     pub height: usize,
-    data: Vec<Vec<Option<GlyphPaletteColor>>>,
+    pub data: Vec<Vec<Option<GlyphPaletteColor>>>,
 }
 
 #[derive(Debug, Snafu)]
@@ -142,6 +175,15 @@ impl GlyphValue {
     }
 }
 
+#[derive(Debug)]
+pub enum GlyphLabel {
+    CodepointSingle(u32),
+    CodepointSequence(Vec<u8>),
+    CharacterSingle(char),
+    CharacterSequence(Vec<char>),
+    Tag(String),
+}
+
 impl GlyphLabel {
     pub fn try_from_codepoint(codepoints: Vec<u32>) -> Result<GlyphLabel, TryFromIntError> {
         if codepoints.len() == 1 {
@@ -159,6 +201,35 @@ impl GlyphLabel {
             GlyphLabel::CharacterSingle(characters[0])
         } else {
             GlyphLabel::CharacterSequence(characters)
+        }
+    }
+
+    pub fn to_semantic(&self) -> Option<SemanticGlyphLabel> {
+        Some(match self {
+            GlyphLabel::CodepointSingle(codepoint) => {
+                SemanticGlyphLabel::CharSequence(vec![char::from_u32(*codepoint)?])
+            }
+            GlyphLabel::CodepointSequence(vec) => SemanticGlyphLabel::CharSequence(
+                vec.iter().map(|codepoint| *codepoint as char).collect(),
+            ),
+            GlyphLabel::CharacterSingle(ch) => SemanticGlyphLabel::CharSequence(vec![*ch]),
+            GlyphLabel::CharacterSequence(vec) => SemanticGlyphLabel::CharSequence(vec.clone()),
+            GlyphLabel::Tag(tag) => SemanticGlyphLabel::Tag(tag.clone()),
+        })
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+pub enum SemanticGlyphLabel {
+    CharSequence(Vec<char>),
+    Tag(String),
+}
+
+impl fmt::Display for SemanticGlyphLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SemanticGlyphLabel::CharSequence(vec) => f.write_str(&String::from_iter(vec)),
+            SemanticGlyphLabel::Tag(tag) => f.write_fmt(format_args!("`{tag}`")),
         }
     }
 }
