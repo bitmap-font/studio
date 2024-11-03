@@ -70,7 +70,7 @@ pub struct GlyphDefinition {
     pub value: Option<GlyphValue>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlyphPaletteColor {
     Zero = 0x0,
     One = 0x1,
@@ -146,28 +146,28 @@ impl GlyphPaletteColor {
 
 #[derive(Debug)]
 pub struct GlyphValue {
-    pub width: usize,
-    pub height: usize,
+    pub width: u16,
+    pub height: u16,
     pub data: Vec<Vec<Option<GlyphPaletteColor>>>,
 }
 
 #[derive(Debug, Snafu)]
 #[snafu(display("row-length of glyph is not all same: {}", widths.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")))]
 pub struct GlyphNotRectangleError {
-    widths: Vec<usize>,
+    widths: Vec<u16>,
 }
 
 impl GlyphValue {
     pub fn new(
         data: Vec<Vec<Option<GlyphPaletteColor>>>,
     ) -> Result<GlyphValue, GlyphNotRectangleError> {
-        let mut widths: Vec<_> = data.iter().map(|row| row.len()).collect();
+        let mut widths: Vec<_> = data.iter().map(|row| row.len() as u16).collect();
         widths.sort();
         widths.dedup();
         match &widths[..] {
             &[width] => Ok(GlyphValue {
                 width,
-                height: data.len(),
+                height: data.len() as u16,
                 data,
             }),
             _ => Err(GlyphNotRectangleError { widths }),
