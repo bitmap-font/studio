@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 serde = "1.0.209"
 toml = "0.8.19"
-write-fonts = "0.29.0"
+write-fonts = { version = "0.29.0", features = ["read"] }
 walkdir = "2.5.0"
 kurbo = "0.11.1"
 unicode_names2 = "1.3.0"

@@ -1,6 +1,5 @@
 mod backend;
-mod bitmap_matrix;
-mod path;
+mod glyph;
 mod project;
 mod source_file;
 mod workspace;

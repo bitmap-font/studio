@@ -2,7 +2,7 @@ use std::str::FromStr;
 use winnow::{
     ascii::{digit1, hex_digit1, oct_digit1},
     combinator::{alt, cut_err, opt, preceded, repeat, separated, separated_foldl1, terminated},
-    error::{StrContext, StrContextValue},
+    error::StrContext,
     seq,
     token::{any, none_of},
     PResult, Parser,

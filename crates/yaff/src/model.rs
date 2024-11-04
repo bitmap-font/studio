@@ -70,6 +70,27 @@ pub struct GlyphDefinition {
     pub value: Option<GlyphValue>,
 }
 
+/// It is generally means 4-bit colors described as following table:
+///
+/// |   ID | Color   |   ID | Color          |
+/// | ---: | :------ | ---: | :------------- |
+/// |  `0` | Black*  |  `8` | Bright Black*  |
+/// |  `1` | Red     |  `9` | Bright Red     |
+/// |  `2` | Green   | `10` | Bright Green   |
+/// |  `3` | Yellow  | `11` | Bright Yellow  |
+/// |  `4` | Blue    | `12` | Bright Blue    |
+/// |  `5` | Magenta | `13` | Bright Magenta |
+/// |  `6` | Cyan    | `14` | Bright Cyan    |
+/// |  `7` | White*  | `15` | Bright White*  |
+///
+/// But for hand-drawn anti-aliased fonts, we treat 0=Black, 7=White, 8=BrightBlack, 15=BrightWhite a bit differently if COLR flag is not manually set.
+///
+/// |   ID | Meanning           |
+/// | ---: | :----------------- |
+/// |  `0` | FG w/ 100% opacity |
+/// |  `8` | FG w/  75% opacity |
+/// |  `7` | FG w/  50% opacity |
+/// | `15` | FG w/  25% opacity |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlyphPaletteColor {
     Zero = 0x0,

@@ -1,8 +1,10 @@
-use std::{collections::BTreeSet, fs, io, iter::once, path::Path};
+use std::{borrow::BorrowMut, collections::BTreeSet, fs, io, path::Path};
 
-use jiff::{civil::date, tz::TimeZone, Timestamp};
+use jiff::{civil::date, tz::TimeZone, Timestamp, Unit};
 use snafu::prelude::*;
 use write_fonts::{
+    from_obj::ToOwnedTable,
+    read::{FontRef, TableProvider},
     tables::{
         cmap::{Cmap, PlatformId},
         glyf::{Glyf, GlyfLocaBuilder, SimpleGlyph},
@@ -17,12 +19,12 @@ use write_fonts::{
         sbix::HeaderFlags,
         vmtx::LongMetric,
     },
-    types::{Fixed, LongDateTime, NameId},
+    types::{Fixed, LongDateTime, NameId, Tag},
     BuilderError, FontBuilder, OffsetMarker,
 };
 use yaff::GlyphDefinition;
 
-use crate::bitmap_matrix::BitmapMatrix;
+use crate::glyph::BitmapMatrix;
 
 use super::{FontBackend, FontOptions};
 
@@ -45,6 +47,8 @@ pub enum OpentypeTtfBuildError {
     Io { source: io::Error },
     #[snafu(transparent)]
     WriteFonts { source: write_fonts::error::Error },
+    #[snafu(transparent)]
+    Jiff { source: jiff::Error },
 }
 
 impl OpentypeTtfBackend {
@@ -57,7 +61,8 @@ impl OpentypeTtfBackend {
                 height: options.height,
             });
         }
-        let size_multiplier = (16f64 / (options.height as f64)).ceil() as u16;
+        // Apple requires `unitsPerEm` not to be less than 64.
+        let size_multiplier = (64f64 / (options.height as f64)).ceil() as u16;
         Ok(OpentypeTtfBackend {
             options,
             size_multiplier,
@@ -84,18 +89,16 @@ impl FontBackend for OpentypeTtfBackend {
         //     SemanticGlyphLabel::Tag(tag) => todo!(),
         // }
         self.max_width = self.max_width.max(glyph_value.width);
-        BitmapMatrix::from(glyph).as_bezier_paths();
         self.matrices.push(BitmapMatrix::from(glyph));
     }
 
     fn build_to(self, dir: impl AsRef<Path>) -> Result<(), Self::Err> {
-        let (glyf, loca, loca_format) = self.make_glyf_loca()?;
-        let cmap = self.make_cmap();
-        let hhea = self.make_hhea();
+        let (loca_format, num_glyphs, (glyf, loca, cmap, hmtx)) =
+            self.make_glyph_related_tables()?;
+        let hhea = self.make_hhea(&hmtx);
         let head = self.make_head(loca_format)?;
-        let maxp = self.make_maxp();
+        let maxp = self.make_maxp(num_glyphs);
         let os2 = self.make_os2();
-        let hmtx = self.make_hmtx();
         let name = self.make_name();
         let post = self.make_post();
 
@@ -112,34 +115,31 @@ impl FontBackend for OpentypeTtfBackend {
             .add_table(&name)?
             .add_table(&post)?
             .build();
-        let checksum_adjustment = {
-            let sum = bytes
-                .chunks(4)
-                .into_iter()
-                .map(|v| {
-                    let mut bytes = [0u8; 4];
-                    bytes[..v.len()].copy_from_slice(v);
-                    u32::from_be_bytes(bytes)
-                })
-                .fold(0u32, |acc, word| acc.wrapping_add(word));
-            0xB1B0AFBAu32.wrapping_sub(sum)
-        };
-        eprintln!("checksum=0x{:X}", checksum_adjustment);
+        let checksum = bytes
+            .chunks(4)
+            .map(|chunk| {
+                let mut bytes = [0u8; 4];
+                bytes[..chunk.len()].copy_from_slice(chunk);
+                u32::from_be_bytes(bytes)
+            })
+            .fold(0u32, |acc, word| acc.wrapping_add(word));
+        let checksum_adjustment = 0xB1B0AFBAu32.wrapping_sub(checksum);
+
+        eprintln!(
+            "checksum=0x{:X}, adjustment=0x{:X}",
+            checksum, checksum_adjustment
+        );
+
+        let font = FontRef::new(&bytes).expect("fresh font must be parsed");
+        let mut head: Head = font
+            .head()
+            .expect("head table must be exists")
+            .to_owned_table();
+        head.checksum_adjustment = checksum_adjustment;
 
         let bytes = FontBuilder::new()
-            .add_table(&Head {
-                checksum_adjustment,
-                ..head
-            })?
-            .add_table(&hhea)?
-            .add_table(&maxp)?
-            .add_table(&os2)?
-            .add_table(&hmtx)?
-            .add_table(&cmap)?
-            .add_table(&loca)?
-            .add_table(&glyf)?
-            .add_table(&name)?
-            .add_table(&post)?
+            .add_table(&head)?
+            .copy_missing_tables(font)
             .build();
 
         let dir = dir.as_ref();
@@ -164,7 +164,7 @@ impl OpentypeTtfBackend {
                 .to_zoned(TimeZone::UTC)
                 .expect("1904-01-01T00:00:00Z must be presentable in timestamp");
             let now = Timestamp::now().to_zoned(TimeZone::UTC);
-            (&now - &base).get_seconds()
+            (&now - &base).total(Unit::Second)? as i64
         };
         Ok(Head {
             font_revision: Fixed::from_f64(
@@ -197,43 +197,52 @@ impl OpentypeTtfBackend {
         })
     }
 
-    fn make_hhea(&self) -> Hhea {
-        Hhea::default()
+    fn make_hhea(&self, hmtx: &Hmtx /* vmtx: &Vmtx */) -> Hhea {
+        Hhea {
+            ascender: Default::default(),
+            descender: Default::default(),
+            line_gap: Default::default(),
+            advance_width_max: Default::default(),
+            min_left_side_bearing: Default::default(),
+            min_right_side_bearing: Default::default(),
+            x_max_extent: Default::default(),
+            caret_slope_rise: Default::default(),
+            caret_slope_run: Default::default(),
+            caret_offset: Default::default(),
+            number_of_long_metrics: hmtx.h_metrics.len() as _, /* + vmtx.v_metrics.len() */
+        }
     }
 
-    fn make_maxp(&self) -> Maxp {
-        Maxp::new(self.matrices.len() as u16)
+    fn make_maxp(&self, num_glyphs: u16) -> Maxp {
+        Maxp::new(num_glyphs)
     }
 
     fn make_os2(&self) -> Os2 {
         Os2::default()
     }
 
-    fn make_hmtx(&self) -> Hmtx {
-        // @TODO refactor
-        Hmtx {
-            h_metrics: vec![LongMetric::new(
-                self.options.height * self.size_multiplier,
-                0,
-            )],
-            left_side_bearings: vec![],
-        }
-    }
+    fn make_glyph_related_tables(
+        &self,
+    ) -> Result<(LocaFormat, u16, (Glyf, Loca, Cmap, Hmtx)), OpentypeTtfBuildError> {
+        let mut num_glyphs = 0;
+        let mut hmtx_h_metrics = Vec::new();
+        let mut hmtx_left_side_bearings = Vec::new();
 
-    fn make_cmap(&self) -> Cmap {
-        Cmap::default()
-    }
-
-    fn make_glyf_loca(&self) -> Result<(Glyf, Loca, LocaFormat), OpentypeTtfBuildError> {
-        let mut builder = GlyfLocaBuilder::new();
+        let mut glyf_loca_builder = GlyfLocaBuilder::new();
 
         for matrix in &self.matrices {
-            let paths = matrix.as_bezier_paths();
+            let (paths, bb) = matrix.as_bezier_paths(self.size_multiplier as _);
             match &paths[..] {
                 [path] => {
-                    builder.add_glyph(
+                    glyf_loca_builder.add_glyph(
                         &SimpleGlyph::from_bezpath(path).expect("must be valid bezier path"),
                     )?;
+                    hmtx_h_metrics.push(LongMetric::new(
+                        bb.width().try_into().expect("width <= 16 i believe"),
+                        0,
+                    ));
+                    hmtx_left_side_bearings.push(0);
+                    num_glyphs += 1;
                 }
                 _ => {
                     eprintln!("there is unsupported glyph");
@@ -241,7 +250,11 @@ impl OpentypeTtfBackend {
             }
         }
 
-        Ok(builder.build())
+        let (glyf, loca, loca_format) = glyf_loca_builder.build();
+        let hmtx = Hmtx::new(hmtx_h_metrics, hmtx_left_side_bearings);
+        let cmap = Cmap::default();
+
+        Ok((loca_format, num_glyphs, (glyf, loca, cmap, hmtx)))
     }
 
     fn make_name(&self) -> Name {
