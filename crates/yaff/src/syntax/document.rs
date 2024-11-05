@@ -1,6 +1,6 @@
 use snafu::prelude::*;
 use winnow::{
-    combinator::{alt, opt, repeat, separated_foldl1},
+    combinator::{alt, opt, repeat},
     error::ContextError,
     seq, Parser,
 };

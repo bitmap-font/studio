@@ -1,4 +1,8 @@
-use std::{borrow::BorrowMut, collections::BTreeSet, fs, io, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs, io,
+    path::Path,
+};
 
 use jiff::{civil::date, tz::TimeZone, Timestamp, Unit};
 use snafu::prelude::*;
@@ -6,7 +10,7 @@ use write_fonts::{
     from_obj::ToOwnedTable,
     read::{FontRef, TableProvider},
     tables::{
-        cmap::{Cmap, PlatformId},
+        cmap::{Cmap, CmapSubtable, EncodingRecord, PlatformId, SequentialMapGroup},
         glyf::{Glyf, GlyfLocaBuilder, SimpleGlyph},
         head::{Head, MacStyle},
         hhea::Hhea,
@@ -19,12 +23,15 @@ use write_fonts::{
         sbix::HeaderFlags,
         vmtx::LongMetric,
     },
-    types::{Fixed, LongDateTime, NameId, Tag},
+    types::{FWord, Fixed, LongDateTime, NameId},
     BuilderError, FontBuilder, OffsetMarker,
 };
-use yaff::GlyphDefinition;
+use yaff::{GlyphDefinition, SemanticGlyphLabel};
 
-use crate::glyph::BitmapMatrix;
+use crate::glyph::{
+    path::{analyze_bezpath, PointAndContours},
+    BitmapMatrix,
+};
 
 use super::{FontBackend, FontOptions};
 
@@ -32,7 +39,7 @@ pub struct OpentypeTtfBackend {
     options: FontOptions,
     size_multiplier: u16,
     max_width: u16,
-    matrices: Vec<BitmapMatrix>,
+    matrices: Vec<(Vec<SemanticGlyphLabel>, BitmapMatrix)>,
 }
 
 #[derive(Debug, Snafu)]
@@ -79,25 +86,23 @@ impl FontBackend for OpentypeTtfBackend {
         let Some(glyph_value) = &glyph.value else {
             return;
         };
-        // match label {
-        //     SemanticGlyphLabel::CharSequence(vec) => {
-        //         if vec.len() != 1 {
-        //             panic!("not supported for now")
-        //         } else {
-        //         }
-        //     }
-        //     SemanticGlyphLabel::Tag(tag) => todo!(),
-        // }
         self.max_width = self.max_width.max(glyph_value.width);
-        self.matrices.push(BitmapMatrix::from(glyph));
+        dbg!(BitmapMatrix::from(glyph).as_bezier_paths(1).0[0].to_svg());
+        self.matrices.push((
+            glyph
+                .labels
+                .iter()
+                .map(|label| label.to_semantic())
+                .flatten()
+                .collect(),
+            BitmapMatrix::from(glyph),
+        ));
     }
 
     fn build_to(self, dir: impl AsRef<Path>) -> Result<(), Self::Err> {
-        let (loca_format, num_glyphs, (glyf, loca, cmap, hmtx)) =
-            self.make_glyph_related_tables()?;
+        let (loca_format, (glyf, loca, cmap, hmtx, maxp)) = self.make_glyph_related_tables()?;
         let hhea = self.make_hhea(&hmtx);
         let head = self.make_head(loca_format)?;
-        let maxp = self.make_maxp(num_glyphs);
         let os2 = self.make_os2();
         let name = self.make_name();
         let post = self.make_post();
@@ -119,11 +124,13 @@ impl FontBackend for OpentypeTtfBackend {
             .chunks(4)
             .map(|chunk| {
                 let mut bytes = [0u8; 4];
-                bytes[..chunk.len()].copy_from_slice(chunk);
+                bytes.copy_from_slice(chunk);
                 u32::from_be_bytes(bytes)
             })
             .fold(0u32, |acc, word| acc.wrapping_add(word));
-        let checksum_adjustment = 0xB1B0AFBAu32.wrapping_sub(checksum);
+        // let checksum = 0;
+        // let checksum_adjustment = 0xB1B0AFBAu32.wrapping_sub(checksum);
+        let checksum_adjustment = 0;
 
         eprintln!(
             "checksum=0x{:X}, adjustment=0x{:X}",
@@ -184,8 +191,8 @@ impl OpentypeTtfBackend {
             // @TODO i'm not confident about this
             x_min: 0,
             y_min: 0,
-            x_max: (self.max_width * self.size_multiplier) as i16,
-            y_max: (self.options.height * self.size_multiplier) as i16,
+            x_max: (self.max_width * self.size_multiplier) as _,
+            y_max: (self.options.height * self.size_multiplier) as _,
 
             // @TODO bold and italic support
             mac_style: MacStyle::empty(),
@@ -199,8 +206,8 @@ impl OpentypeTtfBackend {
 
     fn make_hhea(&self, hmtx: &Hmtx /* vmtx: &Vmtx */) -> Hhea {
         Hhea {
-            ascender: Default::default(),
-            descender: Default::default(),
+            ascender: FWord::new((self.options.ascender * self.size_multiplier) as _),
+            descender: FWord::new(-((self.options.descender * self.size_multiplier) as i16)),
             line_gap: Default::default(),
             advance_width_max: Default::default(),
             min_left_side_bearing: Default::default(),
@@ -213,35 +220,100 @@ impl OpentypeTtfBackend {
         }
     }
 
-    fn make_maxp(&self, num_glyphs: u16) -> Maxp {
-        Maxp::new(num_glyphs)
-    }
-
     fn make_os2(&self) -> Os2 {
-        Os2::default()
+        Os2 {
+            x_avg_char_width: Default::default(),
+            // @TODO change this
+            us_weight_class: 400,
+            us_width_class: 5,
+            fs_type: Default::default(),
+            y_subscript_x_size: Default::default(),
+            y_subscript_y_size: Default::default(),
+            y_subscript_x_offset: Default::default(),
+            y_subscript_y_offset: Default::default(),
+            y_superscript_x_size: Default::default(),
+            y_superscript_y_size: Default::default(),
+            y_superscript_x_offset: Default::default(),
+            y_superscript_y_offset: Default::default(),
+            y_strikeout_size: Default::default(),
+            y_strikeout_position: Default::default(),
+            s_family_class: Default::default(),
+            panose_10: Default::default(),
+            ul_unicode_range_1: Default::default(),
+            ul_unicode_range_2: Default::default(),
+            ul_unicode_range_3: Default::default(),
+            ul_unicode_range_4: Default::default(),
+            ach_vend_id: Default::default(),
+            fs_selection: Default::default(),
+            us_first_char_index: Default::default(),
+            us_last_char_index: Default::default(),
+            s_typo_ascender: (self.options.ascender * self.size_multiplier) as _,
+            s_typo_descender: -((self.options.descender * self.size_multiplier) as i16),
+            s_typo_line_gap: Default::default(),
+            us_win_ascent: Default::default(),
+            us_win_descent: Default::default(),
+            ul_code_page_range_1: Default::default(),
+            ul_code_page_range_2: Default::default(),
+            sx_height: Default::default(),
+            s_cap_height: Default::default(),
+            us_default_char: Default::default(),
+            us_break_char: Default::default(),
+            us_max_context: Default::default(),
+            us_lower_optical_point_size: Default::default(),
+            us_upper_optical_point_size: Default::default(),
+        }
     }
 
     fn make_glyph_related_tables(
         &self,
-    ) -> Result<(LocaFormat, u16, (Glyf, Loca, Cmap, Hmtx)), OpentypeTtfBuildError> {
-        let mut num_glyphs = 0;
+    ) -> Result<(LocaFormat, (Glyf, Loca, Cmap, Hmtx, Maxp)), OpentypeTtfBuildError> {
+        let mut num_glyphs = 0u16;
+        let mut max_points = 0u16;
+        let mut max_contours = 0u16;
+
         let mut hmtx_h_metrics = Vec::new();
         let mut hmtx_left_side_bearings = Vec::new();
 
+        let mut character_mappings = BTreeMap::new();
+
         let mut glyf_loca_builder = GlyfLocaBuilder::new();
 
-        for matrix in &self.matrices {
+        for (labels, matrix) in &self.matrices {
+            let mut groups = Vec::new();
+            for label in labels {
+                match label {
+                    SemanticGlyphLabel::CharSequence(vec) => match &vec[..] {
+                        &[ch] => groups.push(ch),
+                        _ => {
+                            eprintln!("{} is not supported yet", vec.iter().collect::<String>());
+                            continue;
+                        }
+                    },
+                    SemanticGlyphLabel::Tag(tag) => {
+                        let Some(ch) = unicode_names2::character(&tag) else {
+                            continue;
+                        };
+                        groups.push(ch);
+                    }
+                }
+            }
+
             let (paths, bb) = matrix.as_bezier_paths(self.size_multiplier as _);
             match &paths[..] {
                 [path] => {
                     glyf_loca_builder.add_glyph(
                         &SimpleGlyph::from_bezpath(path).expect("must be valid bezier path"),
                     )?;
-                    hmtx_h_metrics.push(LongMetric::new(
-                        bb.width().try_into().expect("width <= 16 i believe"),
-                        0,
-                    ));
+                    hmtx_h_metrics.push(LongMetric::new(bb.width() as _, 0));
                     hmtx_left_side_bearings.push(0);
+                    let PointAndContours { points, contours } = analyze_bezpath(path);
+                    max_points = max_points.max(points as _);
+                    max_contours = max_contours.max(contours as _);
+
+                    for ch in groups {
+                        character_mappings.insert(ch, num_glyphs);
+                    }
+
                     num_glyphs += 1;
                 }
                 _ => {
@@ -252,9 +324,52 @@ impl OpentypeTtfBackend {
 
         let (glyf, loca, loca_format) = glyf_loca_builder.build();
         let hmtx = Hmtx::new(hmtx_h_metrics, hmtx_left_side_bearings);
-        let cmap = Cmap::default();
+        let cmap = Cmap::new(vec![{
+            let mut groups = Vec::new();
+            for (ch, id) in character_mappings.into_iter() {
+                groups.push(SequentialMapGroup::new(ch as _, ch as _, id as _));
+            }
 
-        Ok((loca_format, num_glyphs, (glyf, loca, cmap, hmtx)))
+            EncodingRecord::new(PlatformId::Unicode, 6, CmapSubtable::format_12(
+                // header = u16 + u16
+                4 + 
+                // length = u32
+                4 + 
+                // language = u32
+                4 + 
+                // num_groups = u32
+                4 +
+                // groups = {num_groups} * (u32 + u32 + u32)
+                12 * groups.len() as u32, 
+                // The language field must be set to zero for all 'cmap' subtables whose platform IDs are other than Macintosh (platform ID 1)
+                0, groups.len() as _, groups))
+        }]);
+
+        let maxp = Maxp {
+            num_glyphs,
+            // since we don't use quad or curve, it's identical.
+            max_points: Some(max_points),
+            max_contours: Some(max_contours),
+
+            // no composite glyph for now.
+            max_composite_points: Some(0),
+            max_composite_contours: Some(0),
+            max_component_elements: Some(0),
+            max_component_depth: Some(1),
+
+            // we don't use twilight zone for now to reduce complexity.
+            // hinting is very very hard problem.
+            max_zones: Some(1),
+            max_twilight_points: Some(0),
+            max_storage: Some(0),
+            max_function_defs: Some(0),
+            max_instruction_defs: Some(0),
+            max_size_of_instructions: Some(0),
+
+            max_stack_elements: Some(1),
+        };
+
+        Ok((loca_format, (glyf, loca, cmap, hmtx, maxp)))
     }
 
     fn make_name(&self) -> Name {

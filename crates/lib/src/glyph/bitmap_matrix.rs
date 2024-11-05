@@ -1,16 +1,11 @@
 use std::collections::HashSet;
 
-use kurbo::{BezPath, Point};
+use kurbo::{BezPath, Rect};
 use yaff::{GlyphDefinition, GlyphPaletteColor};
 
-use crate::glyph::{
-    math::Matrix2x2,
-    pathfinder::{find_path, MonochromeField},
-};
+use crate::glyph::pathfinder::{find_path, MonochromeField};
 
-use super::math::{BoundingBox, Pos};
-
-const DEBUG: bool = false;
+use super::math::Pos;
 
 pub struct BitmapMatrix(pub Vec<Vec<Option<GlyphPaletteColor>>>);
 
@@ -54,7 +49,7 @@ impl BitmapMatrix {
         BitmapMatrix(this)
     }
 
-    pub fn as_bezier_paths(&self, scale: usize) -> (Vec<BezPath>, BoundingBox) {
+    pub fn as_bezier_paths(&self, scale: usize) -> (Vec<BezPath>, Rect) {
         struct Field<'a> {
             mat: &'a BitmapMatrix,
             color: &'a GlyphPaletteColor,
@@ -74,7 +69,7 @@ impl BitmapMatrix {
         let dots = Vec::from_iter((0..height).flat_map(|r| (0..width).map(move |c| Pos { r, c })));
 
         let mut result = Vec::new();
-        let mut whole_bb = BoundingBox::EMPTY;
+        let mut whole_bb = Rect::ZERO;
 
         let mut consumed_dots = HashSet::new();
         for pos in dots {
@@ -86,12 +81,12 @@ impl BitmapMatrix {
                 continue;
             };
 
-            let (path, path_bb) = find_path(pos, scale, Field { mat: &self, color }, |pos| {
+            let path = find_path(pos, scale, Field { mat: &self, color }, |pos| {
                 consumed_dots.insert(pos);
             });
 
+            whole_bb = whole_bb.union(path.control_box());
             result.push(path);
-            whole_bb.merge(&path_bb);
         }
 
         (result, whole_bb)

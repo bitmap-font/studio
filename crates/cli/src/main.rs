@@ -14,6 +14,9 @@ fn main() -> eyre::Result<()> {
         full_font_name: None,
         postscript_name: None,
         height: 8,
+
+        ascender: 5,
+        descender: 1,
     })?;
     for glyph in doc.list_glyph() {
         println!();

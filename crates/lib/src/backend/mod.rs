@@ -17,6 +17,8 @@ pub struct FontOptions {
     pub version: FontVerseion,
 
     pub height: u16,
+    pub ascender: u16,
+    pub descender: u16,
 }
 
 pub struct FontVerseion {

@@ -1,6 +1,6 @@
 use kurbo::BezPath;
 
-use super::math::{BoundingBox, Direction, Matrix2x2, Pos};
+use super::math::{Direction, Matrix2x2, Pos};
 
 const IS_DEBUG: bool = false;
 
@@ -15,9 +15,9 @@ pub fn find_path(
     scale: usize,
     field: impl MonochromeField,
     consumption_reporter: impl FnMut(Pos) -> (),
-) -> (BezPath, BoundingBox) {
+) -> BezPath {
     let mut path = BezPath::new();
-    let bb = _find_path(
+    _find_path(
         begin,
         scale,
         field,
@@ -26,7 +26,7 @@ pub fn find_path(
         &mut path,
     );
 
-    (path, bb)
+    path
 }
 
 fn _find_path(
@@ -36,7 +36,7 @@ fn _find_path(
     mut consumption_reporter: impl FnMut(Pos) -> (),
     mode: PathfinderMode,
     path: &mut BezPath,
-) -> BoundingBox {
+) {
     let begin_r = begin_l.shifted(&Direction::Right);
     // we use top line of the pixel for the start of contour travelling
     //   @====>            <====@
@@ -46,17 +46,13 @@ fn _find_path(
     // Note that hole represented by its direction (ccw)
     let (actual_begin, mut pos, mut direction) = if mode == PathfinderMode::Contour {
         path.move_to(begin_l.as_kurbo_point(scale));
-        path.line_to(begin_r.as_kurbo_point(scale));
         (begin_l, begin_r, Direction::Right)
     } else {
         path.move_to(begin_r.as_kurbo_point(scale));
-        path.line_to(begin_l.as_kurbo_point(scale));
         (begin_r, begin_l, Direction::Left)
     };
     let is_contour = mode == PathfinderMode::Contour;
     let mut size = 1;
-
-    let mut bb = BoundingBox::EMPTY;
 
     if IS_DEBUG {
         eprintln!("{actual_begin:?} -> {pos:?} : {direction:?}");
@@ -103,14 +99,11 @@ fn _find_path(
         size += 1;
         pos = pos.shifted(&next_direction);
         direction = next_direction;
-        bb.merge(&pos);
     }
     if size != 0 {
         path.line_to(pos.as_kurbo_point(scale));
     }
     path.close_path();
-
-    bb
 }
 
 fn _debug_flow(

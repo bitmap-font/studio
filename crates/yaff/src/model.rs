@@ -1,6 +1,6 @@
 use core::fmt;
 use snafu::prelude::*;
-use std::{collections::HashMap, fmt::Write, num::TryFromIntError};
+use std::{collections::HashMap, num::TryFromIntError};
 
 pub struct Document {
     elements: Vec<BlockElement>,

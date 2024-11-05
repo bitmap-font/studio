@@ -1,4 +1,4 @@
-use std::{iter::once, usize};
+use std::usize;
 
 use kurbo::Point;
 use strum::FromRepr;
@@ -10,15 +10,6 @@ pub struct Pos {
 }
 
 impl Pos {
-    pub const MIN: Pos = Pos {
-        r: usize::MIN,
-        c: usize::MIN,
-    };
-    pub const MAX: Pos = Pos {
-        r: usize::MAX,
-        c: usize::MAX,
-    };
-
     pub fn shifted(&self, direction: &Direction) -> Pos {
         match direction {
             Direction::Up => Pos {
@@ -48,57 +39,6 @@ impl Pos {
 
     pub fn as_kurbo_point(&self, scale: usize) -> Point {
         Point::new((self.c * scale) as f64, (self.r * scale) as f64)
-    }
-}
-
-/// Nearly identical to [`core::ops::Range<Pos>`]
-#[derive(Clone)]
-pub struct BoundingBox {
-    min: Pos,
-    max: Pos,
-}
-
-impl BoundingBox {
-    pub const EMPTY: BoundingBox = BoundingBox {
-        min: Pos::MAX,
-        max: Pos::MIN,
-    };
-
-    pub fn width(&self) -> usize {
-        self.max.c - self.min.c
-    }
-
-    pub fn merge(&mut self, pos_iter: &impl IterPos) {
-        for pos in pos_iter.iter() {
-            self.min = Pos {
-                r: self.min.r.min(pos.r),
-                c: self.min.c.min(pos.c),
-            };
-            self.max = Pos {
-                r: self.max.r.max(pos.r),
-                c: self.max.c.max(pos.c),
-            };
-        }
-    }
-
-    pub fn iterate_intpos(&self) -> impl Iterator<Item = Pos> + '_ {
-        (self.min.r..self.max.r)
-            .flat_map(move |r| (self.min.c..self.max.c).map(move |c| Pos { r, c }))
-    }
-}
-
-trait IterPos {
-    fn iter(&self) -> impl Iterator<Item = &Pos>;
-}
-
-impl IterPos for Pos {
-    fn iter(&self) -> impl Iterator<Item = &Pos> {
-        once(self)
-    }
-}
-impl IterPos for BoundingBox {
-    fn iter(&self) -> impl Iterator<Item = &Pos> {
-        once(&self.min).chain(once(&self.max))
     }
 }
 
